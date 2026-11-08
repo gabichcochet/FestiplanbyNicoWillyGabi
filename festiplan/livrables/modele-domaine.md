@@ -1,12 +1,6 @@
 # Modélisation du domaine
 
-## 1. Objectif
-
-Ce document décrit le modèle métier de FestiPlan, sans tenir compte de FastAPI ni de SQLAlchemy. Dans le code initial, le modèle métier et les modèles de base de données sont les mêmes classes (`app/models.py`). Ici, on sépare les deux : les classes ci-dessous représentent les notions du festival et les règles qu'elles doivent respecter, pas les tables.
-
-Les noms reprennent ceux du code (`Festival`, `Stage`, `Artist`, `Concert`, `Incident`) pour faciliter le passage à la refactorisation.
-
-## 2. Schéma du domaine
+## 1. Schéma du domaine
 
 ```mermaid
 classDiagram
@@ -118,7 +112,7 @@ classDiagram
 - Pointillés : un agrégat en référence un autre seulement par son identifiant.
 - Chaque bloc `Agregat_...` correspond à une frontière d'agrégat.
 
-## 3. Entités
+## 2. Entités
 
 | Entité | Pourquoi c'est une entité |
 |---|---|
@@ -128,7 +122,7 @@ classDiagram
 | `Artist` | Un artiste peut avoir plusieurs concerts, il doit donc être identifiable. |
 | `Incident` | Chaque incident doit pouvoir être retrouvé et suivi (champ `resolved`). |
 
-## 4. Objets-valeurs
+## 3. Objets-valeurs
 
 Les objets-valeurs sont immuables et vérifient leurs règles à leur création. Si les valeurs sont invalides, l'objet ne peut pas être créé.
 
@@ -144,7 +138,7 @@ Dans le code initial, les équipements sont stockés comme une chaîne séparée
 
 `TimeSlot` sert aussi à savoir si deux créneaux se chevauchent. La règle n'est donc écrite qu'à un seul endroit, alors qu'aujourd'hui la comparaison des dates est faite à la fois dans la route de déplacement et dans `SchedulingService`.
 
-## 5. Agrégats
+## 4. Agrégats
 
 ### Festival (racine) avec ses concerts
 
@@ -175,7 +169,7 @@ Un incident est lié à un concert par son identifiant, mais il est séparé de 
 - **Un agrégat `Concert` séparé** : un concert seul ne connaît pas les autres concerts, il ne peut donc pas vérifier R2 et R3. Les contrôles se retrouveraient de nouveau dans les services.
 - **Tout dans `Festival`** : les artistes n'appartiennent pas à un festival, et les incidents ne doivent pas dépendre du statut du planning. L'agrégat serait plus gros sans protéger plus de règles.
 
-## 6. Où sont protégées les règles
+## 5. Où sont protégées les règles
 
 | Règle | Où | Comment |
 |---|---|---|
@@ -192,7 +186,7 @@ Un incident est lié à un concert par son identifiant, mais il est séparé de 
 
 Le domaine vérifie tout ce qui ne dépend que des données qu'il a. Le cas d'utilisation vérifie seulement ce qui demande d'aller chercher des données (l'existence d'un festival, d'une scène, d'un artiste ou d'un concert). Pydantic reste utilisé pour le format des requêtes HTTP, mais aucune règle métier ne repose uniquement dessus, contrairement au code initial où la capacité et la description d'incident ne sont vérifiées que par les schémas.
 
-## 7. Statut du planning (défaut 3)
+## 6. Statut du planning (défaut 3)
 
 Dans le code initial, le statut du planning est le champ `status` du festival (`preparation` ou `published`). On garde ce fonctionnement avec l'énumération `FestivalStatus`.
 
@@ -214,7 +208,7 @@ Règle retenue :
 - quand le planning est publié, un déplacement ordinaire est refusé avec une erreur métier ;
 - une opération spécifique, « modification après publication », permet de corriger le planning. Elle demande un motif, refait toutes les vérifications et produit un événement pour prévenir le public.
 
-## 8. Événements de domaine
+## 7. Événements de domaine
 
 Un événement décrit quelque chose qui s'est déjà passé. Le festival l'enregistre pendant l'opération, et le cas d'utilisation le transmet après l'enregistrement en base, par exemple pour envoyer une notification.
 
