@@ -46,14 +46,14 @@ app/
 
 Les dépendances vont toujours vers le cœur : le domaine ne dépend de rien, les cas d'utilisation ne dépendent que du domaine et des ports, et seul `infrastructure/wiring.py` connaît les implémentations concrètes.
 
-Pour le détail, voir le dossier [`livrables/`](livrables/) :
+Pour le détail, voir le dossier [`festiplan/livrables/`](festiplan/livrables/) :
 
-- [`note-architecture.md`](livrables/note-architecture.md) : choix d'architecture, ports et adaptateurs, limites et compromis ;
-- [`diagrammes.md`](livrables/diagrammes.md) : diagramme de composants et diagramme de séquence ;
-- [`modele-domaine.md`](livrables/modele-domaine.md) : entités, objets-valeurs, agrégats et règles R1 à R10 ;
-- [`diagnostic-architecture.md`](livrables/diagnostic-architecture.md) : analyse du dépôt initial.
+- [`Note architecture.md`](festiplan/livrables/Note%20architecture.md) : choix d'architecture, ports et adaptateurs, limites et compromis ;
+- [`diagrammes.md`](festiplan/livrables/diagrammes.md) : diagramme de composants et diagramme de séquence ;
+- [`modele-domaine.md`](festiplan/livrables/modele-domaine.md) : entités, objets-valeurs, agrégats et règles R1 à R10 ;
+- [`diagnostic-architecture.md`](festiplan/livrables/diagnostic-architecture.md) : analyse du dépôt initial.
 
-Le déroulé de la refactorisation et de la correction des défauts est dans [`REFACTORING.md`](REFACTORING.md).
+Le déroulé de la refactorisation et de la correction des défauts est dans [`REFACTORING.md`](festiplan/livrables/REFACTORING.md).
 
 ## Principales routes
 
@@ -86,7 +86,7 @@ python -m pytest -q tests/test_schedule_use_case.py tests/test_reschedule_use_ca
 python -m pytest -q tests/test_step5_defects.py          # non-régression des 3 défauts
 ```
 
-Les tests HTTP utilisent une base SQLite temporaire : ils ne touchent pas à `festiplan.db`. La stratégie de tests est décrite dans `REFACTORING.md` (étape 6).
+Les tests HTTP utilisent une base SQLite temporaire : ils ne touchent pas à `festiplan.db`. La stratégie de tests est décrite dans [`REFACTORING.md`](festiplan/livrables/REFACTORING.md) (étape 6).
 
 ## Défauts du dépôt initial (corrigés)
 
@@ -96,4 +96,4 @@ Les tests HTTP utilisent une base SQLite temporaire : ils ne touchent pas à `fe
 
 Pour vérifier : `FESTIPLAN_FAIL_NOTIFICATIONS=true` simule la panne du défaut 2, et `tests/test_step5_defects.py` couvre les trois scénarios.
 
-Tout les diagrammes et schémas sont affichables sur github.
+Tous les diagrammes et schémas s'affichent directement sur GitHub.
