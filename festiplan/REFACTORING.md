@@ -138,3 +138,29 @@ mais une évolution devra être reportée dans les deux.
 Tout l'ancien code a été remplacé par les cas d'utilisation et les adaptateurs :
 `app/services/` (dont `PublicationService`, `NotificationService` et `SchedulingService`),
 `app/repositories/` et `app/utils/date_helpers.py`.
+
+---
+
+# Étape 6 — Stratégie de tests
+
+La suite est organisée selon les responsabilités :
+
+- **Domaine** (`tests/test_domain.py`) : créneaux, chevauchements, contraintes de programmation,
+  transitions de publication, équipements, capacités et descriptions d'incident. Ces tests
+  n'utilisent ni FastAPI ni SQLite.
+- **Cas d'utilisation** (`tests/test_schedule_use_case.py`,
+  `tests/test_reschedule_use_case.py`) : programmation, déplacement, annulation, publication,
+  erreurs métier et interactions avec des ports remplacés par des doubles en mémoire.
+- **Adaptateurs** (`tests/test_refactored_api.py` et tests `*_api.py`) : routes HTTP et
+  persistance avec `TestClient` et une base SQLite temporaire.
+- **Non-régression** (`tests/test_step5_defects.py`) : conflits, échec et renvoi des
+  notifications, ainsi que le gel d'un planning publié.
+
+Depuis le dossier `festiplan`, exécuter toute la suite avec :
+
+```bash
+python -m pytest -q
+```
+
+Les tests métier peuvent être lancés isolément avec
+`python -m pytest -q tests/test_domain.py tests/test_schedule_use_case.py tests/test_reschedule_use_case.py`.
