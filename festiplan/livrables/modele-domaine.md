@@ -15,7 +15,9 @@ classDiagram
             stage_id
             slot : TimeSlot
             status : scheduled | cancelled
+            schedule(festival, artist, stage, slot, others)
             reschedule(new_slot, festival, others)
+            cancel(festival)
         }
     }
 
@@ -24,10 +26,11 @@ classDiagram
             <<racine>>
             id
             name
+            location
             period : TimeSlot
             status : FestivalStatus
             ensure_schedule_editable()
-            publish()
+            publish(concerts)
             unpublish()
         }
     }
@@ -139,12 +142,15 @@ Dans le code initial, les équipements sont stockés comme une chaîne séparée
 
 ### Concert
 
-Le concert est l'agrégat qui porte les règles de programmation. Pour changer de créneau, on passe par `concert.reschedule(new_slot, festival, others)`, qui reçoit :
+Le concert est l'agrégat qui porte les règles de programmation. Trois opérations le modifient :
 
-- le **festival**, en lecture seule, pour connaître sa période (R6) et son statut (R7) ;
-- la liste des **autres concerts du festival**, pour détecter les chevauchements de scène (R2) et d'artiste (R3).
+- `Concert.schedule(festival, artist, stage, slot, others)` crée un nouveau concert ;
+- `concert.reschedule(new_slot, festival, others)` le déplace ;
+- `concert.cancel(festival)` l'annule.
 
-Toutes les vérifications du déplacement sont ainsi au même endroit, dans le domaine. C'est ce qui corrige le défaut 1 : dans le code initial, `reschedule_concert` modifiait le concert sans refaire les contrôles de la création.
+Elles reçoivent le **festival**, en lecture seule, pour connaître sa période (R6) et son statut (R7), et la liste des **autres concerts du festival** pour détecter les chevauchements de scène (R2) et d'artiste (R3). La programmation reçoit aussi l'**artiste** et la **scène**, pour vérifier que la scène appartient au festival (R4) et qu'elle a les équipements requis (R5).
+
+La programmation et le déplacement partagent la même vérification de créneau : les règles ne sont écrites qu'une fois, dans le domaine. C'est ce qui corrige le défaut 1 : dans le code initial, `reschedule_concert` modifiait le concert sans refaire les contrôles de la création.
 
 Le planning n'est pas une classe à part : c'est la liste des concerts d'un festival.
 
@@ -154,8 +160,9 @@ Le festival garde sa période et son statut. Il ne contient pas ses concerts : l
 
 C'est lui qui contrôle le cycle de vie du planning :
 
-- `publish()` et `unpublish()` changent le statut, et refusent une transition impossible (publier un festival déjà publié, dépublier un festival en préparation) avec `InvalidFestivalTransition` ;
-- `ensure_schedule_editable()` refuse toute modification du planning quand il est publié (`ScheduleLocked`). Le concert l'appelle avant un déplacement, et la création d'un concert aussi.
+- `publish(concerts)` vérifie d'abord que le planning respecte R2, R3 et R6 (R8, `ScheduleHasConflicts`), puis change le statut ;
+- `publish(concerts)` et `unpublish()` refusent une transition impossible (publier un festival déjà publié, dépublier un festival en préparation) avec `InvalidFestivalTransition` ;
+- `ensure_schedule_editable()` refuse toute modification du planning quand il est publié (`ScheduleLocked`). Le concert l'appelle avant une programmation, un déplacement ou une annulation.
 
 ### Stage
 
@@ -189,11 +196,11 @@ Les artistes n'appartiennent pas à un festival, et les incidents ne doivent pas
 | R1 | `TimeSlot` | Refus à la création du créneau (`InvalidTimeSlot`) |
 | R2 | `Concert` | Vérification des chevauchements sur la même scène avec les autres concerts (concerts annulés ignorés) → `SchedulingConflict` |
 | R3 | `Concert` | Même vérification pour l'artiste, toutes scènes confondues → `SchedulingConflict` |
-| R4 | Cas d'utilisation | Le cas d'utilisation vérifie que le festival, l'artiste, la scène ou le concert existent, et que la scène appartient au festival |
-| R5 | `Concert` (programmation) | Les équipements requis de l'artiste doivent être inclus dans ceux de la scène |
+| R4 | Cas d'utilisation + `Concert` | Le cas d'utilisation vérifie que le festival, l'artiste, la scène ou le concert existent (404). `Concert.schedule` vérifie que la scène appartient au festival → `StageNotInFestival` |
+| R5 | `Concert` (programmation) | Les équipements requis de l'artiste doivent être inclus dans ceux de la scène (`EquipmentSet.covers`) → `MissingEquipment` |
 | R6 | `Concert` | Le créneau doit être compris dans la période du festival → `OutsideFestivalPeriod` |
 | R7 | `Festival` | `ensure_schedule_editable()` refuse de programmer, déplacer ou annuler un concert tant que le planning est publié → `ScheduleLocked` |
-| R8 | Cas d'utilisation de publication | Avant d'appeler `festival.publish()`, vérification qu'aucun concert programmé n'est en conflit (scène ou artiste) |
+| R8 | `Festival` | `publish(concerts)` refuse de publier si un concert non annulé chevauche un autre sur la même scène ou avec le même artiste, ou sort des dates du festival → `ScheduleHasConflicts` |
 | R9 | `Capacity` | Refus à la création |
 | R10 | Cas d'utilisation + `IncidentDescription` | Le cas d'utilisation vérifie que le concert existe. La description vide est refusée à la création |
 
@@ -243,7 +250,7 @@ Un événement décrit quelque chose qui s'est déjà passé, et peut déclenche
 |---|---|---|---|
 | Déplacer un concert | `RescheduleConcert` | Concert déplacé (`ConcertRescheduled`) | Notification |
 | Programmer un concert | `ScheduleConcert` | Concert programmé | — |
-| Annuler un concert | `CancelConcert` | Concert annulé | Notification |
+| Annuler un concert | `CancelConcert` | Concert annulé | — |
 | Publier le planning | `PublishFestival` | Planning publié | Notification |
 | Dépublier le planning | `UnpublishFestival` | Planning dépublié | — |
 | Déclarer un incident | `ReportIncident` | Incident déclaré | — |

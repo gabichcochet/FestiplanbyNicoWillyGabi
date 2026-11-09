@@ -1,25 +1,29 @@
 """Traduction des erreurs métier en réponses HTTP (le domaine ne connaît pas HTTP)."""
 from fastapi import HTTPException
 
-from app.application.festival_publication import FestivalNotFound
-from app.application.reschedule_concert import ConcertNotFound
+from app.application.errors import ArtistNotFound, ConcertNotFound, FestivalNotFound, StageNotFound
 from app.domain.scheduling import (
-    ConcertNotReschedulable, DomainError, InvalidFestivalTransition, InvalidTimeSlot,
-    OutsideFestivalPeriod, ScheduleLocked, SchedulingConflict,
+    ConcertNotReschedulable, DomainError, InvalidFestivalTransition,
+    ScheduleHasConflicts, ScheduleLocked, SchedulingConflict,
 )
 
 _HTTP_STATUS = {
+    # Objet demandé introuvable
     ConcertNotFound: 404,
     FestivalNotFound: 404,
-    InvalidTimeSlot: 400,
-    OutsideFestivalPeriod: 400,
+    ArtistNotFound: 404,
+    StageNotFound: 404,
+    # Conflit avec l'état actuel (planning publié, autre concert)
     SchedulingConflict: 409,
     ConcertNotReschedulable: 409,
     ScheduleLocked: 409,
+    ScheduleHasConflicts: 409,
     InvalidFestivalTransition: 409,
 }
 
-HANDLED = (ConcertNotFound, FestivalNotFound, DomainError)
+# Toute autre DomainError (créneau invalide, hors période, équipement manquant,
+# capacité, description...) est une donnée refusée : 400.
+HANDLED = (ConcertNotFound, FestivalNotFound, ArtistNotFound, StageNotFound, DomainError)
 
 
 def to_http(exc: Exception) -> HTTPException:

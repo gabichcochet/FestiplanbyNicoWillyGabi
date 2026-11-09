@@ -172,12 +172,12 @@ def test_notification_failure_keeps_the_move_and_queues_the_notification():
 def test_festival_lifecycle():
     f = hellforge()
     f.ensure_schedule_editable()
-    f.publish()
+    f.publish([])
     assert f.is_published
     with pytest.raises(ScheduleLocked):
         f.ensure_schedule_editable()
     with pytest.raises(InvalidFestivalTransition):
-        f.publish()
+        f.publish([])
     f.unpublish()
     assert f.status is FestivalStatus.PREPARATION
     with pytest.raises(InvalidFestivalTransition):
@@ -186,21 +186,21 @@ def test_festival_lifecycle():
 
 def test_publish_use_case_saves_and_notifies():
     festivals, notifier, pending = InMemoryFestivals(hellforge()), SpyNotifier(), InMemoryPending()
-    result = PublishFestival(festivals, notifier, pending).execute(1)
+    result = PublishFestival(festivals, InMemoryConcerts(), notifier, pending).execute(1)
     assert festivals.saved == [(1, FestivalStatus.PUBLISHED)]
     assert result.notification.status is NotificationStatus.SENT
 
 
 def test_publish_with_failed_notification_is_still_published():
     festivals, pending = InMemoryFestivals(hellforge()), InMemoryPending()
-    result = PublishFestival(festivals, SpyNotifier(fail=True), pending).execute(1)
+    result = PublishFestival(festivals, InMemoryConcerts(), SpyNotifier(fail=True), pending).execute(1)
     assert result.festival.is_published
     assert len(pending.list()) == 1
 
 
 def test_publish_unknown_festival():
     with pytest.raises(FestivalNotFound):
-        PublishFestival(InMemoryFestivals(), SpyNotifier(), InMemoryPending()).execute(9)
+        PublishFestival(InMemoryFestivals(), InMemoryConcerts(), SpyNotifier(), InMemoryPending()).execute(9)
 
 
 def test_unpublish_use_case():

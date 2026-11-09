@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.application.notifications import NotificationOutcome, notify_or_queue
-from app.application.ports import FestivalRepository, Notifier, PendingNotificationStore
+from app.application.ports import ConcertRepository, FestivalRepository, Notifier, PendingNotificationStore
 from app.domain.scheduling import Festival
 
 
@@ -19,8 +19,10 @@ class PublicationResult:
 
 
 class PublishFestival:
-    def __init__(self, festivals: FestivalRepository, notifier: Notifier, pending: PendingNotificationStore):
+    def __init__(self, festivals: FestivalRepository, concerts: ConcertRepository,
+                 notifier: Notifier, pending: PendingNotificationStore):
         self.festivals = festivals
+        self.concerts = concerts
         self.notifier = notifier
         self.pending = pending
 
@@ -28,7 +30,7 @@ class PublishFestival:
         festival = self.festivals.get(festival_id)
         if festival is None:
             raise FestivalNotFound("Festival introuvable")
-        festival.publish()
+        festival.publish(self.concerts.list_for_festival(festival.id))  # R8
         self.festivals.save(festival)
         outcome = notify_or_queue(
             self.notifier, self.pending,
