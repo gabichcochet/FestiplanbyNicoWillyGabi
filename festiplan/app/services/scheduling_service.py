@@ -41,19 +41,8 @@ class SchedulingService:
             raise ValueError("La scène ne dispose pas de tous les équipements requis")
         return self.repo.create(Concert(festival_id=payload.festival_id,artist_id=payload.artist_id,stage_id=payload.stage_id,start_time=payload.start_time,end_time=payload.end_time))
     
-    def reschedule_concert(self, concert_id, payload):
-        concert=self.repo.get(concert_id)
-        if concert is None:
-            return None
-        if payload.end_time <= payload.start_time: 
-            raise ValueError("La date de fin doit être postérieure à la date de début")
-        # DÉFAUT INTENTIONNEL 1 : les conflits, équipements, dates du festival et statut publié ne sont pas contrôlés ici.
-        concert.start_time=payload.start_time; concert.end_time=payload.end_time
-        self.db.commit(); self.db.refresh(concert)
-        # DÉFAUT INTENTIONNEL 2 : notification après commit ; une panne produit une réponse 500 après persistance.
-        self.notifications.notify_schedule_change(concert.id,f"Concert déplacé au {concert.start_time.isoformat()}")
-        return concert
-    
+    # Le déplacement d'un concert a été extrait vers app/application/reschedule_concert.py
+
     def cancel_concert(self, concert_id):
         concert=self.repo.get(concert_id)
         if concert is None: 
