@@ -4,7 +4,11 @@ from app.database import get_db
 from app.models import Concert
 from app.schemas import ConcertCreate,ConcertRead,ConcertReschedule
 from app.services.scheduling_service import SchedulingService
-from app.utils.date_helpers import overlaps
+from app.application.reschedule_concert import ConcertNotFound,RescheduleConcert,RescheduleConcertCommand
+from app.domain.scheduling import (ConcertNotReschedulable,DomainError,InvalidTimeSlot,
+                                   OutsideFestivalPeriod,SchedulingConflict)
+from app.infrastructure.email_notifier import EmailNotifier
+from app.infrastructure.sqlalchemy_repositories import SqlAlchemyConcertRepository,SqlAlchemyFestivalRepository
 
 router=APIRouter(prefix="/concerts",tags=["concerts"])
 
@@ -27,20 +31,29 @@ def create_concert(payload:ConcertCreate,db:Session=Depends(get_db)):
     except ValueError as exc:
         raise HTTPException(status_code=400,detail=str(exc))
 
+def get_reschedule_concert(db:Session=Depends(get_db)) -> RescheduleConcert:
+    """Composition : branche les adaptateurs techniques sur le cas d'utilisation."""
+    return RescheduleConcert(SqlAlchemyConcertRepository(db),SqlAlchemyFestivalRepository(db),EmailNotifier())
+
+# Traduction des erreurs métier en codes HTTP (le domaine ne connaît pas HTTP).
+_HTTP_STATUS={
+    ConcertNotFound:404,
+    InvalidTimeSlot:400,
+    OutsideFestivalPeriod:400,
+    SchedulingConflict:409,
+    ConcertNotReschedulable:409,
+}
+
 @router.patch("/{concert_id}/reschedule",response_model=ConcertRead)
-def reschedule_concert(concert_id:int,payload:ConcertReschedule,db:Session=Depends(get_db)):
-    # Accès direct à SQLAlchemy dans le contrôleur : défaut architectural intentionnel.
-    concert=db.query(Concert).filter(Concert.id==concert_id).first()
-    if concert is None:
-        raise HTTPException(status_code=404,detail="Concert introuvable")
-    if payload.end_time<=payload.start_time:
-        raise HTTPException(status_code=400,detail="La date de fin doit être postérieure au début")
-    try: 
-        return SchedulingService(db).reschedule_concert(concert_id,payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400,detail=str(exc))
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500,detail=str(exc))
+def reschedule_concert(concert_id:int,payload:ConcertReschedule,use_case:RescheduleConcert=Depends(get_reschedule_concert)):
+    command=RescheduleConcertCommand(concert_id,payload.start_time,payload.end_time)
+    try:
+        concert=use_case.execute(command)
+    except (ConcertNotFound,DomainError) as exc:
+        raise HTTPException(status_code=_HTTP_STATUS.get(type(exc),400),detail=str(exc))
+    return ConcertRead(id=concert.id,festival_id=concert.festival_id,artist_id=concert.artist_id,
+                       stage_id=concert.stage_id,start_time=concert.slot.start,end_time=concert.slot.end,
+                       status=concert.status)
 
 @router.post("/{concert_id}/cancel",response_model=ConcertRead)
 def cancel_concert(concert_id:int,db:Session=Depends(get_db)):
