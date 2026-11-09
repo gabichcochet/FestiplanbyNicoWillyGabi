@@ -38,7 +38,7 @@ Le contrôleur ne fait plus de requête SQL : il construit la commande, appelle 
 
 ### 7. Vérification
 - `tests/test_reschedule_use_case.py` : tests unitaires avec faux en mémoire (aucune base).
-- `pytest` : 71 tests verts lors de la dernière vérification.
+- `pytest` : 89 tests verts lors de la dernière vérification.
 
 ### Choix retenus
 - 409 pour un conflit ou un planning figé, 400 pour une donnée invalide.
