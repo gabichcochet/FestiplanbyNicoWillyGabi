@@ -1,8 +1,5 @@
 # Diagrammes d'architecture
 
-Ces diagrammes décrivent le code réel de la branche `master` (dossier `festiplan/app/`).
-Chaque bloc correspond à un module Python existant.
-
 ## 1. Diagramme de composants
 
 ```mermaid
