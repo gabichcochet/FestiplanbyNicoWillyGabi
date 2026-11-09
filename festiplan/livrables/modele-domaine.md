@@ -25,7 +25,10 @@ classDiagram
             id
             name
             period : TimeSlot
-            status : preparation | published
+            status : FestivalStatus
+            ensure_schedule_editable()
+            publish()
+            unpublish()
         }
     }
 
@@ -110,7 +113,7 @@ classDiagram
 | `Artist` | Un artiste peut avoir plusieurs concerts, il doit donc être identifiable. |
 | `Incident` | Chaque incident doit pouvoir être retrouvé et suivi (champ `resolved`). |
 
-Les statuts sont des valeurs simples : `preparation` ou `published` pour le festival, `scheduled` ou `cancelled` pour le concert.
+Le statut du festival est une énumération, `FestivalStatus` (`PREPARATION` ou `PUBLISHED`), car il a un cycle de vie avec des transitions contrôlées (voir section 6). Le statut du concert reste une valeur simple : `scheduled` ou `cancelled`.
 
 ## 3. Objets-valeurs
 
@@ -149,6 +152,11 @@ Le planning n'est pas une classe à part : c'est la liste des concerts d'un fest
 
 Le festival garde sa période et son statut. Il ne contient pas ses concerts : les concerts le référencent par `festival_id`.
 
+C'est lui qui contrôle le cycle de vie du planning :
+
+- `publish()` et `unpublish()` changent le statut, et refusent une transition impossible (publier un festival déjà publié, dépublier un festival en préparation) avec `InvalidFestivalTransition` ;
+- `ensure_schedule_editable()` refuse toute modification du planning quand il est publié (`ScheduleLocked`). Le concert l'appelle avant un déplacement, et la création d'un concert aussi.
+
 ### Stage
 
 Une scène appartient à un festival (`festival_id`), mais sa capacité et ses équipements peuvent changer sans toucher aux concerts. Elle forme donc son propre agrégat.
@@ -184,8 +192,8 @@ Les artistes n'appartiennent pas à un festival, et les incidents ne doivent pas
 | R4 | Cas d'utilisation | Le cas d'utilisation vérifie que le festival, l'artiste, la scène ou le concert existent, et que la scène appartient au festival |
 | R5 | `Concert` (programmation) | Les équipements requis de l'artiste doivent être inclus dans ceux de la scène |
 | R6 | `Concert` | Le créneau doit être compris dans la période du festival → `OutsideFestivalPeriod` |
-| R7 | `Concert` | Déplacement refusé si le festival est publié → `ConcertNotReschedulable` |
-| R8 | Cas d'utilisation de publication | Avant de passer à `published`, vérification qu'aucun concert programmé n'est en conflit |
+| R7 | `Festival` | `ensure_schedule_editable()` refuse de programmer, déplacer ou annuler un concert tant que le planning est publié → `ScheduleLocked` |
+| R8 | Cas d'utilisation de publication | Avant d'appeler `festival.publish()`, vérification qu'aucun concert programmé n'est en conflit (scène ou artiste) |
 | R9 | `Capacity` | Refus à la création |
 | R10 | Cas d'utilisation + `IncidentDescription` | Le cas d'utilisation vérifie que le concert existe. La description vide est refusée à la création |
 
@@ -197,23 +205,35 @@ Les erreurs métier ne connaissent pas HTTP : c'est la route qui les traduit en 
 
 ## 6. Statut du planning (défaut 3)
 
-Le statut du planning est le champ `status` du festival (`preparation` ou `published`).
+Le statut du planning est le statut du festival (`FestivalStatus`).
 
 ```mermaid
 stateDiagram-v2
-    [*] --> preparation
-    preparation --> preparation : programmer, déplacer, annuler
-    preparation --> published : publier si aucun conflit (R8)
+    [*] --> PREPARATION
+    PREPARATION --> PREPARATION : programmer, déplacer, annuler
+    PREPARATION --> PUBLISHED : publier si aucun conflit (R8)
+    PUBLISHED --> PREPARATION : dépublier
 
-    note right of published
-        déplacer un concert
-        est refusé (R7)
+    note right of PUBLISHED
+        programmer, déplacer ou annuler
+        est refusé (R7, ScheduleLocked)
     end note
 ```
 
-Règle retenue : une fois le planning publié, le déplacement d'un concert est refusé avec une erreur métier (`ConcertNotReschedulable`, traduite en 409).
+Règle retenue : un planning publié ne peut pas être modifié directement. Toute tentative est refusée avec `ScheduleLocked` (409), et le message invite à dépublier le festival.
 
-C'est le choix le plus simple. Sa limite : après publication, aucune correction n'est possible, même en cas d'imprévu. Une évolution possible serait une opération de modification exceptionnelle, avec un motif obligatoire et une notification au public.
+Pour corriger un planning publié, la procédure explicite est :
+
+1. dépublier le festival (`POST /festivals/{id}/unpublish`) ;
+2. faire les modifications, avec toutes les vérifications habituelles ;
+3. republier, ce qui revérifie l'ensemble du planning (R8).
+
+Pourquoi ce choix : il évite de bloquer définitivement un festival en cas d'imprévu, sans ajouter de règle de modification particulière, puisque les modifications passent par les opérations ordinaires.
+
+Ses limites :
+
+- pendant la correction, le planning n'est plus publié ;
+- on ne garde pas de trace de la raison de la dépublication. Une évolution possible serait une modification exceptionnelle avec un motif obligatoire, sans dépublier.
 
 ## 7. Événements de domaine
 
@@ -224,9 +244,18 @@ Un événement décrit quelque chose qui s'est déjà passé, et peut déclenche
 | Déplacer un concert | `RescheduleConcert` | Concert déplacé (`ConcertRescheduled`) | Notification |
 | Programmer un concert | `ScheduleConcert` | Concert programmé | — |
 | Annuler un concert | `CancelConcert` | Concert annulé | Notification |
-| Publier le planning | `PublishSchedule` | Planning publié | Notification |
+| Publier le planning | `PublishFestival` | Planning publié | Notification |
+| Dépublier le planning | `UnpublishFestival` | Planning dépublié | — |
 | Déclarer un incident | `ReportIncident` | Incident déclaré | — |
 
 On n'a pas créé de classes d'événements : pour rester simple, le cas d'utilisation appelle directement le port `Notifier` une fois la modification enregistrée.
 
-Lien avec le défaut 2 : la notification est envoyée après l'enregistrement. Si l'envoi échoue, l'adaptateur lève `NotificationFailed`, le cas d'utilisation journalise l'erreur, et la modification reste valide. L'API ne répond donc plus par une erreur 500.
+### Lien avec le défaut 2
+
+La notification est un effet secondaire : elle est tentée après l'enregistrement, et son échec n'annule jamais l'opération métier. Si l'envoi échoue :
+
+1. l'adaptateur lève `NotificationFailed` ;
+2. le cas d'utilisation met la notification en attente, avec le port `PendingNotificationStore` (table `pending_notifications`) ;
+3. l'API répond 200, car l'opération est bien enregistrée, et indique l'état de la notification : `sent` ou `pending_retry`.
+
+Les notifications en attente peuvent être consultées (`GET /notifications/pending`) et renvoyées à la demande (`POST /notifications/retry`, cas d'utilisation `RetryPendingNotifications`). Le renvoi n'est pas automatique, pour éviter un traitement en arrière-plan.
