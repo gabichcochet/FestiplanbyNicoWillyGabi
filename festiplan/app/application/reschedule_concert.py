@@ -1,14 +1,12 @@
 """Cas d'utilisation : déplacer un concert."""
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from datetime import datetime
 
-from app.application.ports import ConcertRepository, FestivalRepository, NotificationFailed, Notifier
+from app.application.notifications import NotificationOutcome, notify_or_queue
+from app.application.ports import ConcertRepository, FestivalRepository, Notifier, PendingNotificationStore
 from app.domain.scheduling import Concert, TimeSlot
-
-logger = logging.getLogger(__name__)
 
 
 class ConcertNotFound(Exception):
@@ -22,13 +20,21 @@ class RescheduleConcertCommand:
     end_time: datetime
 
 
+@dataclass(frozen=True)
+class RescheduleConcertResult:
+    concert: Concert
+    notification: NotificationOutcome
+
+
 class RescheduleConcert:
-    def __init__(self, concerts: ConcertRepository, festivals: FestivalRepository, notifier: Notifier):
+    def __init__(self, concerts: ConcertRepository, festivals: FestivalRepository,
+                 notifier: Notifier, pending: PendingNotificationStore):
         self.concerts = concerts
         self.festivals = festivals
         self.notifier = notifier
+        self.pending = pending
 
-    def execute(self, command: RescheduleConcertCommand) -> Concert:
+    def execute(self, command: RescheduleConcertCommand) -> RescheduleConcertResult:
         concert = self.concerts.get(command.concert_id)
         if concert is None:
             raise ConcertNotFound("Concert introuvable")
@@ -38,14 +44,11 @@ class RescheduleConcert:
 
         new_slot = TimeSlot(command.start_time, command.end_time)
         concert.reschedule(new_slot, festival, self.concerts.list_for_festival(festival.id))
-        self.concerts.save(concert)
+        self.concerts.save(concert)  # à partir d'ici, le déplacement est acté
 
-        # Effet secondaire : le déplacement est déjà acté, une panne d'envoi
-        # ne doit pas le transformer en erreur pour l'appelant.
-        try:
-            self.notifier.notify_schedule_change(
-                concert.id, f"Concert déplacé au {concert.slot.start.isoformat()}"
-            )
-        except NotificationFailed:
-            logger.warning("Notification non envoyée pour le concert #%s", concert.id, exc_info=True)
-        return concert
+        outcome = notify_or_queue(
+            self.notifier, self.pending,
+            f"Modification du concert #{concert.id}",
+            f"Concert déplacé au {concert.slot.start.isoformat()}",
+        )
+        return RescheduleConcertResult(concert, outcome)

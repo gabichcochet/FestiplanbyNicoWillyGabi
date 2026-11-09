@@ -50,3 +50,70 @@ Le contrôleur ne fait plus de requête SQL : il construit la commande, appelle 
 2. **Annuler un concert** : `Concert.cancel()` + cas d'utilisation `CancelConcert`.
 3. **Publier un festival** : vérifier qu'il n'y a aucun conflit avant publication, même gestion de la notification.
 4. **Consulter un concert / déclarer un incident** : retirer les accès SQLAlchemy directs des contrôleurs.
+
+---
+
+# Étape 5 — Correction des trois défauts initiaux
+
+Tests d'acceptation : `tests/test_step5_defects.py` (niveau HTTP, une classe par défaut).
+Tests unitaires : `tests/test_reschedule_use_case.py` (faux en mémoire, sans base).
+Avant implémentation : 8 tests passent (défaut 1 déjà corrigé à l'étape 4), 10 échouent. Après : **50 tests verts**.
+
+## Défaut 1 — Conflits de programmation
+
+**Règle :** un déplacement est refusé (`409`) si le nouveau créneau chevauche un autre concert non annulé
+du même festival **sur la même scène**, ou **avec le même artiste** (quelle que soit la scène).
+Les créneaux bout à bout (16h-17h puis 17h-18h) ne sont pas en conflit ; un concert peut chevaucher son propre ancien créneau.
+
+**Où :** `Concert.reschedule()` dans `app/domain/scheduling.py`.
+
+| Test | Attendu |
+|---|---|
+| Chevauchement sur la même scène | 409 « la scène est déjà occupée », rien n'est modifié |
+| Artiste sur deux scènes en même temps | 409 « l'artiste est déjà programmé », rien n'est modifié |
+| Déplacement valide | 200, nouveau créneau persisté |
+| Créneaux adjacents / chevauchement de son propre créneau | 200 |
+
+## Défaut 2 — Notification en échec
+
+**Problème :** le déplacement était enregistré (`commit`) puis l'envoi échouait → `500`, alors que la modification était faite.
+
+**Décision :** l'opération métier est la source de vérité, la notification est un effet secondaire.
+- Si la modification est enregistrée, la réponse est **toujours `200`** et contient un champ explicite :
+  - `"notification": {"status": "sent"}` si l'envoi a réussi ;
+  - `"notification": {"status": "pending_retry", "detail": "..."}` s'il a échoué.
+- Une notification en échec n'est pas perdue : elle est stockée dans la table `pending_notifications`.
+- `GET /notifications/pending` liste la file ; `POST /notifications/retry` renvoie les notifications
+  (supprimées si l'envoi réussit, compteur `attempts` incrémenté sinon).
+- Un déplacement refusé n'envoie aucune notification.
+
+**Pourquoi c'est proportionné :** pas de file de messages ni de tâche de fond (non demandées), mais aucune
+information perdue et une réponse HTTP qui dit la vérité. Le renvoi pourrait plus tard être appelé par une tâche planifiée.
+La même logique (`notify_or_queue`) est appliquée à la publication, qui avait le même défaut.
+
+**Où :** `app/application/notifications.py`, port `PendingNotificationStore`, adaptateur `SqlAlchemyPendingNotificationStore`.
+
+## Défaut 3 — Planning publié
+
+**État métier :** `FestivalStatus` = `preparation` ↔ `published`, porté par l'entité `Festival` du domaine.
+
+| Opération | `preparation` | `published` |
+|---|---|---|
+| Publier (`POST /festivals/{id}/publish`) | ✅ → `published` (notifie) | ❌ 409 |
+| Dépublier (`POST /festivals/{id}/unpublish`) | ❌ 409 | ✅ → `preparation` |
+| Déplacer un concert | ✅ | ❌ 409 |
+| Ajouter un concert | ✅ | ❌ 409 |
+
+**Règle retenue :** refus + dépublication explicite. Un planning publié est figé ; pour le modifier,
+l'organisateur le dépublie, fait ses changements, puis le republie, ce qui renvoie une notification.
+On a choisi cette solution plutôt qu'une « procédure spéciale » parce qu'elle est simple, visible dans l'API,
+et qu'elle évite toute modification silencieuse d'un planning déjà communiqué au public.
+
+**Choix assumé :** l'annulation d'un concert reste possible après publication (un groupe qui annule
+est un fait à refléter, pas une modification de planning).
+
+**Où :** `Festival.publish()`, `Festival.unpublish()`, `Festival.ensure_schedule_editable()`,
+cas d'utilisation `PublishFestival` / `UnpublishFestival` dans `app/application/festival_publication.py`.
+
+## Code supprimé
+`PublicationService`, `NotificationService` et `FestivalService.publish` sont remplacés par les cas d'utilisation ci-dessus.

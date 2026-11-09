@@ -51,3 +51,13 @@ class Incident(Base):
     description: Mapped[str]=mapped_column(Text,nullable=False)
     occurred_at: Mapped[datetime]=mapped_column(DateTime,default=datetime.utcnow,nullable=False)
     resolved: Mapped[bool]=mapped_column(Boolean,default=False,nullable=False)
+
+class PendingNotification(Base):
+    """Notification dont l'envoi a échoué, conservée pour être renvoyée."""
+    __tablename__="pending_notifications"
+    id: Mapped[int]=mapped_column(Integer,primary_key=True,index=True)
+    subject: Mapped[str]=mapped_column(String(200),nullable=False)
+    message: Mapped[str]=mapped_column(Text,nullable=False)
+    attempts: Mapped[int]=mapped_column(Integer,default=1,nullable=False)
+    last_error: Mapped[str]=mapped_column(Text,default="",nullable=False)
+    created_at: Mapped[datetime]=mapped_column(DateTime,default=datetime.utcnow,nullable=False)

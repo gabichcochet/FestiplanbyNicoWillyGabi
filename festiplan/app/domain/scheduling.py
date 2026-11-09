@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 
 
 # --- Erreurs métier --------------------------------------------------------
@@ -31,6 +32,14 @@ class ConcertNotReschedulable(DomainError):
     pass
 
 
+class ScheduleLocked(DomainError):
+    """Le planning est publié : il ne peut pas être modifié."""
+
+
+class InvalidFestivalTransition(DomainError):
+    pass
+
+
 # --- Objets métier ---------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -49,20 +58,42 @@ class TimeSlot:
         return other.start <= self.start and self.end <= other.end
 
 
-PUBLISHED = "published"
 CANCELLED = "cancelled"
 
 
-@dataclass(frozen=True)
+class FestivalStatus(str, Enum):
+    """Cycle de vie du planning : preparation <-> published."""
+    PREPARATION = "preparation"
+    PUBLISHED = "published"
+
+
+@dataclass
 class Festival:
     id: int
     name: str
     period: TimeSlot
-    status: str
+    status: FestivalStatus
 
     @property
     def is_published(self) -> bool:
-        return self.status == PUBLISHED
+        return self.status is FestivalStatus.PUBLISHED
+
+    def ensure_schedule_editable(self) -> None:
+        """Seul un planning en préparation accepte des ajouts ou déplacements."""
+        if self.is_published:
+            raise ScheduleLocked(
+                "Le planning est publié : dépubliez le festival avant de le modifier"
+            )
+
+    def publish(self) -> None:
+        if self.status is not FestivalStatus.PREPARATION:
+            raise InvalidFestivalTransition("Le festival est déjà publié")
+        self.status = FestivalStatus.PUBLISHED
+
+    def unpublish(self) -> None:
+        if self.status is not FestivalStatus.PUBLISHED:
+            raise InvalidFestivalTransition("Le festival n'est pas publié")
+        self.status = FestivalStatus.PREPARATION
 
 
 @dataclass
@@ -82,8 +113,7 @@ class Concert:
         """Déplace le concert si toutes les règles métier sont respectées."""
         if self.is_cancelled:
             raise ConcertNotReschedulable("Un concert annulé ne peut pas être déplacé")
-        if festival.is_published:
-            raise ConcertNotReschedulable("Le planning est publié : le concert ne peut plus être déplacé")
+        festival.ensure_schedule_editable()
         if not new_slot.is_within(festival.period):
             raise OutsideFestivalPeriod("Le concert doit se dérouler pendant le festival")
         for other in others:

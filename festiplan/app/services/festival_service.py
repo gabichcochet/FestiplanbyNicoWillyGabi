@@ -13,9 +13,3 @@ class FestivalService:
         if payload.end_date <= payload.start_date:
             raise ValueError("La date de fin doit être postérieure à la date de début")
         return self.repo.create(Festival(name=payload.name,location=payload.location,start_date=payload.start_date,end_date=payload.end_date))
-    
-    def publish(self, festival_id):
-        festival=self.repo.get(festival_id)
-        if festival is None:
-            return None
-        festival.status="published"; self.db.commit(); self.db.refresh(festival); return festival

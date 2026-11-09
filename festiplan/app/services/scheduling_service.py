@@ -1,12 +1,12 @@
 from sqlalchemy.orm import Session
 from app.models import Artist, Concert, Festival, Stage
 from app.repositories.concert_repository import ConcertRepository
-from app.services.notification_service import NotificationService
+from app.infrastructure.sqlalchemy_repositories import to_festival
 from app.utils.date_helpers import overlaps
 
 class SchedulingService:
     def __init__(self, db: Session): 
-        self.db=db; self.repo=ConcertRepository(db); self.notifications=NotificationService()
+        self.db=db; self.repo=ConcertRepository(db)
 
     def list_concerts(self, festival_id): 
         return self.repo.list_for_festival(festival_id)
@@ -28,6 +28,7 @@ class SchedulingService:
         stage=self.db.query(Stage).filter(Stage.id==payload.stage_id).first()
         if festival is None or artist is None or stage is None:
             raise ValueError("Festival, artiste ou scène introuvable")
+        to_festival(festival).ensure_schedule_editable()  # planning publié -> ScheduleLocked
         if stage.festival_id != festival.id:
             raise ValueError("La scène n'appartient pas à ce festival")
         if payload.end_time <= payload.start_time:

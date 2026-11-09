@@ -47,3 +47,22 @@ class IncidentCreate(BaseModel):
 class IncidentRead(BaseModel):
     id:int; concert_id:int; description:str; occurred_at:datetime; resolved:bool
     model_config=ConfigDict(from_attributes=True)
+
+# --- Étape 5 : réponses qui distinguent l'opération métier de la notification ---
+
+class NotificationRead(BaseModel):
+    status:str          # "sent" | "pending_retry"
+    detail:str|None=None
+
+class ConcertRescheduleRead(ConcertRead):
+    notification:NotificationRead
+
+class FestivalStateRead(FestivalRead):
+    notification:NotificationRead|None=None
+
+class PendingNotificationRead(BaseModel):
+    id:int; subject:str; message:str; attempts:int; last_error:str; created_at:datetime
+    model_config=ConfigDict(from_attributes=True)
+
+class RetryReportRead(BaseModel):
+    sent:int; still_pending:int
